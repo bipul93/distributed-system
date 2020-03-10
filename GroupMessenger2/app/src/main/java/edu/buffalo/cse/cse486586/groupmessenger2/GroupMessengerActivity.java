@@ -47,8 +47,10 @@ public class GroupMessengerActivity extends Activity {
     static final String TAG = GroupMessengerActivity.class.getSimpleName();
     static final String [] REMOTE_PORTS = {"11108", "11112", "11116", "11120","11124"};
     static final int SERVER_PORT = 10000;
-    int seqNo = 1;
+    int seqNo = 0;
+    int lastAccepted = 0;
     String portNumber;
+    int providerSeq = 0;
 //    HashMap<String, AVD> avd = new HashMap<String, AVD>();
 
     @Override
@@ -123,7 +125,7 @@ public class GroupMessengerActivity extends Activity {
         @Override
         protected Void doInBackground(ServerSocket... sockets) {
             ServerSocket serverSocket = sockets[0];
-            PriorityQueue<Message> queue = new PriorityQueue<Message>(11, new MessageComparator());
+            PriorityQueue<Message> queue = new PriorityQueue<Message>(25, new MessageComparator());
             /*
              * TODO: Fill in your server code that receives messages and passes them
              * to onProgressUpdate().
@@ -134,39 +136,36 @@ public class GroupMessengerActivity extends Activity {
 
                 do {
                     Socket s = serverSocket.accept();
-                    Log.d("NAME_TAG", "Server Socket Accept");
+                    Log.d("SERVER", "Server Socket Accept");
                     BufferedReader data_in = new BufferedReader(new InputStreamReader(s.getInputStream()));
-//                    ObjectInputStream data_in = new ObjectInputStream(s.getInputStream());
-//                    try {
-//                        Message m = (Message) data_in.readObject();
-//                        System.out.println(m.getMsg()+" -- "+m.getSequenceOrigin()+" -- "+m.getMsgIdentifier());
-//                    } catch (ClassNotFoundException e) {
-//                        e.printStackTrace();
-//                    }
 
                     String message;
                     if ((message = data_in.readLine()) != null) {
                         Log.d("SERVER", message);
                         if(message.contains("PROPOSED")){
-                            //Push to the queue
                             String[] messageDetails = message.split(":");
-                            int suggestedSeqNo = Integer.parseInt(messageDetails[1]);
-                            int proposeSeqNo = (seqNo > suggestedSeqNo ? seqNo : suggestedSeqNo);
-
+//                            int suggestedSeqNo = Integer.parseInt(messageDetails[1]);
+                            int proposeSeqNo = (seqNo > lastAccepted ? seqNo : lastAccepted) + 1;
+                            seqNo = proposeSeqNo;
                             Log.d("SERVER", "Propose Seq: "+proposeSeqNo);
+
+                            Double seqOrigin = Double.parseDouble(proposeSeqNo+"."+messageDetails[1]);
 
                             //TODO: Priority Queue here
 
-                            Message messageObject = new Message(messageDetails[0], messageDetails[2], proposeSeqNo, messageDetails[4], false);
+                            Message messageObject = new Message(messageDetails[0], messageDetails[1],proposeSeqNo, messageDetails[3], false, seqOrigin);
                             queue.add(messageObject);
 
                             PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
-                            data_out.println("PROPOSAL_REPLY:"+proposeSeqNo);
+                            data_out.println("PROPOSAL_REPLY:"+seqOrigin);
                             data_out.close();
 
                         }else{
                             String[] messageDetails = message.split(":");
-                            int FinalSeqNo = Integer.parseInt(messageDetails[1]);
+                            int finalSeqNo = (int) Double.parseDouble(messageDetails[1]);
+                            lastAccepted = finalSeqNo;
+
+//                            Log.d("SERVER", "FINAL SEQ: "+finalSeqNo);
 
                             //TODO: Priority Queue Find, Remove and then Add
                             Message msgToEdit = null;
@@ -179,15 +178,11 @@ public class GroupMessengerActivity extends Activity {
                                 }
                             }
 
-                            queue.remove(msgToEdit);
-                            Message messageObject = new Message(messageDetails[0], messageDetails[2], Integer.parseInt(messageDetails[1]), messageDetails[4], true);
-                            queue.add(messageObject);
+                            Double seqOrigin = Double.parseDouble(messageDetails[1]);
 
-                            queue_iter = queue.iterator();
-                            while(queue_iter.hasNext()){
-                                Message msg = queue_iter.next();
-                                System.out.println(msg.getSequenceOrigin());
-                            }
+                            queue.remove(msgToEdit);
+                            Message messageObject = new Message(messageDetails[0], messageDetails[2], finalSeqNo, messageDetails[4], true, seqOrigin);
+                            queue.add(messageObject);
 
 
                             PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
@@ -196,15 +191,15 @@ public class GroupMessengerActivity extends Activity {
 
                         }
 
-                        Message head = queue.peek();
 
-//                        while (head != null && head.getDeliverable() ){
-//                            queue.remove(head);
-//                        }
-
-//                        Log.d("BIPUL", seqNo+", "+message);
-//                        this.publishProgress(new String[] {String.valueOf(seqNo), message});
-//                        seqNo++;
+                        Message top = queue.peek();
+                        while (top != null && top.getDeliverable() ){
+                            Message head = queue.poll();
+                            Log.d("QUEUE", providerSeq+", "+head.getSequenceOrigin()+" - "+head.getMsg());
+                            this.publishProgress(String.valueOf(providerSeq), head.getMsg());
+                            providerSeq++;
+                            top = queue.peek();
+                        }
 
 
                     }
@@ -230,17 +225,18 @@ public class GroupMessengerActivity extends Activity {
 //            TextView remoteTextView = (TextView) findViewById(R.id.remote_text_display);
             tv.append(strReceived + "\t\n");
 
-//            Uri.Builder uriBuilder = new Uri.Builder();
-//            uriBuilder.authority("edu.buffalo.cse.cse486586.groupmessenger1.provider");
-//            uriBuilder.scheme("content");
-//            Uri mUri = uriBuilder.build();
-//
-//            ContentValues cv = new ContentValues();
-//            cv.put("key", strings[0]);
-//            cv.put("value", strReceived);
-//
-//            getContentResolver().insert(mUri, cv);
+            Uri.Builder uriBuilder = new Uri.Builder();
+            uriBuilder.authority("edu.buffalo.cse.cse486586.groupmessenger2.provider");
+            uriBuilder.scheme("content");
+            Uri mUri = uriBuilder.build();
 
+            ContentValues cv = new ContentValues();
+            cv.put("key", strings[0]);
+            cv.put("value", strReceived);
+
+            Log.d("BIPUL", strings[0]+", "+strReceived);
+
+            getContentResolver().insert(mUri, cv);
 
             return;
         }
@@ -254,8 +250,8 @@ public class GroupMessengerActivity extends Activity {
 
             String msg= msgs[0];
             String portNumber = msgs[1]; //self Port
-            ArrayList<Integer> sequencer = new ArrayList<Integer>();
-            int chosenSeqNo = 0;
+            ArrayList<Double> sequencer = new ArrayList<Double>();
+            Double chosenSeqNo = 0.0;
             String uuid = UUID.randomUUID().toString();
 
             //sequence suggestion
@@ -263,28 +259,28 @@ public class GroupMessengerActivity extends Activity {
                 try {
                     String remotePort = REMOTE_PORTS[i];
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
-                    socket.setSoTimeout(1000);
+//                    socket.setSoTimeout(1000);
                     /*
                      * TODO: Fill in your client code that sends out a message.
                      */
                     PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
                     //Proposed seq No.
-                    String msgToSend = uuid+":"+seqNo+":"+remotePort+":PROPOSED:"+msg;
-                    Log.d("NAME_TAG", msgToSend);
+                    String msgToSend = uuid+":"+portNumber+":PROPOSED:"+msg;
+                    Log.d("CLIENT", msgToSend);
                     data_out.println(msgToSend);
-                    Log.d("NAME_TAG", "Socket Message sent");
+                    Log.d("CLIENT", "Socket Message sent");
 
 
                     //Received Seq No.
                     BufferedReader data_in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                     String message = data_in.readLine();
-                    Log.d("NAME_TAG", "Client Socket receive "+ message);
+                    Log.d("CLIENT", "Client Socket receive "+ message);
                     if (message.contains("PROPOSAL_REPLY")){
-                        int receivedSeqNo = Integer.parseInt(message.split(":")[1]);
+                        Double receivedSeqNo = Double.parseDouble(message.split(":")[1]);
                         sequencer.add(receivedSeqNo);
                         socket.close();
-                        Log.d("NAME_TAG", "Client Socket close "+chosenSeqNo);
+                        Log.d("CLIENT", "Client Socket close "+receivedSeqNo);
                     }
 
                 } catch (UnknownHostException e) {
@@ -296,8 +292,8 @@ public class GroupMessengerActivity extends Activity {
             }
 
             chosenSeqNo = Collections.max(sequencer);
-            seqNo = chosenSeqNo+1;
-
+//            seqNo = chosenSeqNo+1;
+            Log.d("CLIENT", "Non Blocking call "+chosenSeqNo);
             //------------------------------------------------------------------------------------//
 
             //Maximum Sequence Number
@@ -305,14 +301,14 @@ public class GroupMessengerActivity extends Activity {
                 try {
                     String remotePort = REMOTE_PORTS[i];
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
-                    socket.setSoTimeout(1000);
+//                    socket.setSoTimeout(1000);
                     /*
                      * TODO: Fill in your client code that sends out a message.
                      */
                     PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
                     //Proposed seq No.
-                    String msgToSend = uuid+":"+chosenSeqNo+":"+remotePort+":FINAL:"+msg;
+                    String msgToSend = uuid+":"+chosenSeqNo+":"+portNumber+":FINAL:"+msg;
                     data_out.println(msgToSend);
 
                     //Received Seq No.
@@ -321,7 +317,7 @@ public class GroupMessengerActivity extends Activity {
 
                     if (message.contains("FINAL_ACK")){
                         socket.close();
-                        Log.d("NAME_TAG", "Client Socket close final ack");
+                        Log.d("CLIENT", "Client Socket close final ack");
                     }
 
                 } catch (UnknownHostException e) {
@@ -381,24 +377,18 @@ class Message {
     private String origin;
     private boolean deliverable;
     private String msg;
+    private Double seqOrigin;
 
-    public Message(String id, String origin, int seq, String msg, boolean deliverable){
+    public Message(String id, String origin, int seq, String msg, boolean deliverable, Double seqOrigin){
         this.id = id;
         this.msg = msg;
         this.origin = origin;
         this.sequence = seq;
         this.deliverable = deliverable;
+        this.seqOrigin = seqOrigin;
     }
 
-//    public void setSequence(int seq){
-//        this.sequence = seq;
-//    }
-//
-//    public String getMsgIdentifier(){
-//        return id+":"+this.sequence+"."+this.origin;
-//    }
-//
-//    public String getMsg() { return msg; }
+    public String getMsg() { return msg; }
 
     public boolean getDeliverable() { return deliverable; }
 
@@ -410,16 +400,19 @@ class Message {
         return Double.parseDouble(this.sequence+"."+this.origin);
     }
 
+    public Double getSeqOrigin() {
+        return seqOrigin;
+    }
 }
 
 class MessageComparator implements Comparator<Message>{
 
     @Override
     public int compare(Message lhs, Message rhs) {
-        if(lhs.getSequenceOrigin() < rhs.getSequenceOrigin()) {
-            return 1;
-        }else{
+        if(lhs.getSeqOrigin() < rhs.getSeqOrigin()) {
             return -1;
+        }else{
+            return 1;
         }
     }
 }

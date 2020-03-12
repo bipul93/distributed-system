@@ -36,6 +36,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * GroupMessengerActivity is the main Activity for the assignment.
@@ -51,7 +52,8 @@ public class GroupMessengerActivity extends Activity {
     int lastAccepted = 0;
     String portNumber;
     int providerSeq = 0;
-//    HashMap<String, AVD> avd = new HashMap<String, AVD>();
+    int failedPortIndex;
+    HashMap<String, Boolean> avd = new HashMap<String, Boolean>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,8 +66,6 @@ public class GroupMessengerActivity extends Activity {
         //TODo: verify from PA1
         portNumber = String.valueOf((Integer.parseInt(portString)) * 2);
 
-//        AVD avd = new AVD(portNumber);
-
 
         try {
             ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
@@ -76,11 +76,10 @@ public class GroupMessengerActivity extends Activity {
         }
 
 
-//        for(int i = 0; i<REMOTE_PORTS.length; i++) {
-//            avd.put(REMOTE_PORTS[i], new AVD(REMOTE_PORTS[i], i+1));
-//        }
+        for(int i = 0; i<REMOTE_PORTS.length; i++) {
+            avd.put(REMOTE_PORTS[i], true);
+        }
 
-//        System.out.println(avd.get(REMOTE_PORTS[0]));
 
 
         /*
@@ -131,11 +130,14 @@ public class GroupMessengerActivity extends Activity {
              * to onProgressUpdate().
              *
              */
-//            cd~https://docs.oracle.com/javase/tutorial/networking/sockets/readingWriting.html
+//          https://docs.oracle.com/javase/tutorial/networking/sockets/readingWriting.html
+
             try {
 
                 do {
+//                    TimeUnit.MINUTES.sleep(1);
                     Socket s = serverSocket.accept();
+                    s.setSoTimeout(2000);
                     Log.d("SERVER", "Server Socket Accept");
                     BufferedReader data_in = new BufferedReader(new InputStreamReader(s.getInputStream()));
 
@@ -190,6 +192,21 @@ public class GroupMessengerActivity extends Activity {
                             data_out.close();
 
                         }
+
+                        for (String i : avd.keySet()) {
+                            Log.d("MAP", "key: " + i + " value: " + avd.get(i));
+                            if (!avd.get(i)) {
+                                Iterator<Message> queue_iter = queue.iterator();
+                                while(queue_iter.hasNext()){
+                                    Message msg = queue_iter.next();
+                                    Log.d("MATCH", "MATCHED: "+ i +", "+msg.getOrigin());
+                                    if(msg.getOrigin().equals(i)){
+                                        queue.remove(msg);
+                                    }
+                                }
+                            }
+                        }
+
 
 
                         Message top = queue.peek();
@@ -256,41 +273,50 @@ public class GroupMessengerActivity extends Activity {
 
             //sequence suggestion
             for(int i = 0; i<REMOTE_PORTS.length; i++) {
+                String remotePort = REMOTE_PORTS[i];
                 try {
-                    String remotePort = REMOTE_PORTS[i];
-                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
-//                    socket.setSoTimeout(1000);
-                    /*
-                     * TODO: Fill in your client code that sends out a message.
-                     */
-                    PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
+                    if(avd.get(remotePort)) {
+                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
+                        socket.setSoTimeout(2000);
+                        /*
+                         * TODO: Fill in your client code that sends out a message.
+                         */
+                        PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
-                    //Proposed seq No.
-                    String msgToSend = uuid+":"+portNumber+":PROPOSED:"+msg;
-                    Log.d("CLIENT", msgToSend);
-                    data_out.println(msgToSend);
-                    Log.d("CLIENT", "Socket Message sent");
+                        //Proposed seq No.
+                        String msgToSend = uuid + ":" + portNumber + ":PROPOSED:" + msg;
+                        Log.d("CLIENT", msgToSend);
+                        data_out.println(msgToSend);
+                        Log.d("CLIENT", "Socket Message sent");
 
 
-                    //Received Seq No.
-                    BufferedReader data_in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                    String message = data_in.readLine();
-                    Log.d("CLIENT", "Client Socket receive "+ message);
-                    if (message.contains("PROPOSAL_REPLY")){
-                        Double receivedSeqNo = Double.parseDouble(message.split(":")[1]);
-                        sequencer.add(receivedSeqNo);
-                        socket.close();
-                        Log.d("CLIENT", "Client Socket close "+receivedSeqNo);
+                        //Received Seq No.
+                        BufferedReader data_in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                        String message = data_in.readLine();
+                        Log.d("CLIENT", "Client Socket receive " + message);
+                        if (message != null && message.contains("PROPOSAL_REPLY")) {
+                            Double receivedSeqNo = Double.parseDouble(message.split(":")[1]);
+                            sequencer.add(receivedSeqNo);
+                            socket.close();
+                            Log.d("CLIENT", "Client Socket close " + receivedSeqNo);
+                        }else{
+                            socket.close();
+                            avd.put(remotePort, false);
+                            Log.d("PORT", remotePort+" - "+avd.get(remotePort));
+                        }
                     }
 
                 } catch (UnknownHostException e) {
                     Log.e(TAG, "ClientTask UnknownHostException");
                 } catch (IOException e) {
-                    Log.e(TAG, "ClientTask socket IOException");
+                    Log.e(TAG, "ClientTask socket IOException at port: " + remotePort);
+                    avd.put(remotePort, false);
+                    continue;
                 }
 
             }
 
+            //TODO: What if all Socket failed
             chosenSeqNo = Collections.max(sequencer);
 //            seqNo = chosenSeqNo+1;
             Log.d("CLIENT", "Non Blocking call "+chosenSeqNo);
@@ -298,32 +324,39 @@ public class GroupMessengerActivity extends Activity {
 
             //Maximum Sequence Number
             for(int i = 0; i<REMOTE_PORTS.length; i++) {
+                String remotePort = REMOTE_PORTS[i];
                 try {
-                    String remotePort = REMOTE_PORTS[i];
-                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
-//                    socket.setSoTimeout(1000);
-                    /*
-                     * TODO: Fill in your client code that sends out a message.
-                     */
-                    PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
+                    if(avd.get(remotePort)) {
+                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
+                        socket.setSoTimeout(2000);
+                        /*
+                         * TODO: Fill in your client code that sends out a message.
+                         */
+                        PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
-                    //Proposed seq No.
-                    String msgToSend = uuid+":"+chosenSeqNo+":"+portNumber+":FINAL:"+msg;
-                    data_out.println(msgToSend);
+                        //Proposed seq No.
+                        String msgToSend = uuid + ":" + chosenSeqNo + ":" + portNumber + ":FINAL:" + msg;
+                        data_out.println(msgToSend);
 
-                    //Received Seq No.
-                    BufferedReader data_in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                    String message = data_in.readLine();
+                        //Received Seq No.
+                        BufferedReader data_in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                        String message = data_in.readLine();
 
-                    if (message.contains("FINAL_ACK")){
-                        socket.close();
-                        Log.d("CLIENT", "Client Socket close final ack");
+                        if (message != null && message.contains("FINAL_ACK")) {
+                            socket.close();
+                            Log.d("CLIENT", "Client Socket close final ack");
+                        }else{
+                            socket.close();
+                            avd.put(remotePort, false);
+                        }
                     }
 
                 } catch (UnknownHostException e) {
                     Log.e(TAG, "ClientTask UnknownHostException");
                 } catch (IOException e) {
                     Log.e(TAG, "ClientTask socket IOException");
+                    avd.put(remotePort, false);
+                    continue;
                 }
 
             }
@@ -342,34 +375,6 @@ public class GroupMessengerActivity extends Activity {
     }
 }
 
-
-class AVD {
-    private String address;
-    private int id;
-    private int seqCount = 1;
-    private Boolean alive = true;
-
-    public AVD(String address, int id){
-        this.address = address;
-        this.id = id;
-    }
-
-    public String getAddress() {
-        return address;
-    }
-
-    public Boolean getAlive() {
-        return alive;
-    }
-
-    public void setAlive(Boolean alive) {
-        this.alive = alive;
-    }
-
-    public int getId() {
-        return id;
-    }
-}
 
 class Message {
     private String id;
@@ -394,6 +399,10 @@ class Message {
 
     public String getId() {
         return id;
+    }
+
+    public String getOrigin() {
+        return origin;
     }
 
     public Double getSequenceOrigin(){

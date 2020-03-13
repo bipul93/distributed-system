@@ -169,7 +169,7 @@ public class GroupMessengerActivity extends Activity {
 
 //                            Log.d("SERVER", "FINAL SEQ: "+finalSeqNo);
 
-                            //TODO: Priority Queue Find, Remove and then Add
+                            //TODO: Priority Queue Find - Remove - Add
                             Message msgToEdit = null;
                             Iterator<Message> queue_iter = queue.iterator();
                             while(queue_iter.hasNext()){
@@ -184,6 +184,14 @@ public class GroupMessengerActivity extends Activity {
 
                             queue.remove(msgToEdit);
                             Message messageObject = new Message(messageDetails[0], messageDetails[2], finalSeqNo, messageDetails[4], true, seqOrigin);
+//                            for (String i : avd.keySet()) {
+//                                Log.d("MAP", "key: " + i + " value: " + avd.get(i));
+//                                if (!avd.get(i)) {
+//                                    if(!msgToEdit.getOrigin().equals(i)){
+//                                        queue.add(messageObject);
+//                                    }
+//                                }
+//                            }
                             queue.add(messageObject);
 
 
@@ -193,8 +201,10 @@ public class GroupMessengerActivity extends Activity {
 
                         }
 
+                        String failedClient = null;
                         for (String i : avd.keySet()) {
                             Log.d("MAP", "key: " + i + " value: " + avd.get(i));
+                            failedClient = i;
                             if (!avd.get(i)) {
                                 Iterator<Message> queue_iter = queue.iterator();
                                 while(queue_iter.hasNext()){
@@ -208,17 +218,15 @@ public class GroupMessengerActivity extends Activity {
                         }
 
 
-
                         Message top = queue.peek();
-                        while (top != null && top.getDeliverable() ){
+                        while (top != null && top.getDeliverable()){
+//                            (failedClient == null || !failedClient.equals(top.getOrigin())
                             Message head = queue.poll();
                             Log.d("QUEUE", providerSeq+", "+head.getSequenceOrigin()+" - "+head.getMsg());
                             this.publishProgress(String.valueOf(providerSeq), head.getMsg());
                             providerSeq++;
                             top = queue.peek();
                         }
-
-
                     }
                     data_in.close();
                     s.close();
@@ -277,7 +285,7 @@ public class GroupMessengerActivity extends Activity {
                 try {
                     if(avd.get(remotePort)) {
                         Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
-                        socket.setSoTimeout(2000);
+//                        socket.setSoTimeout(500);
                         /*
                          * TODO: Fill in your client code that sends out a message.
                          */
@@ -302,7 +310,6 @@ public class GroupMessengerActivity extends Activity {
                         }else{
                             socket.close();
                             avd.put(remotePort, false);
-                            Log.d("PORT", remotePort+" - "+avd.get(remotePort));
                         }
                     }
 
@@ -311,7 +318,9 @@ public class GroupMessengerActivity extends Activity {
                 } catch (IOException e) {
                     Log.e(TAG, "ClientTask socket IOException at port: " + remotePort);
                     avd.put(remotePort, false);
-                    continue;
+                } catch (NullPointerException e){
+                    Log.e(TAG, "ClientTask socket NullPointer");
+                    avd.put(remotePort, false);
                 }
 
             }
@@ -328,7 +337,7 @@ public class GroupMessengerActivity extends Activity {
                 try {
                     if(avd.get(remotePort)) {
                         Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(remotePort));
-                        socket.setSoTimeout(2000);
+//                        socket.setSoTimeout(500);
                         /*
                          * TODO: Fill in your client code that sends out a message.
                          */
@@ -356,7 +365,15 @@ public class GroupMessengerActivity extends Activity {
                 } catch (IOException e) {
                     Log.e(TAG, "ClientTask socket IOException");
                     avd.put(remotePort, false);
-                    continue;
+                } catch (NullPointerException e){
+                    Log.e(TAG, "ClientTask socket NullPointer");
+                    avd.put(remotePort, false);
+                }
+
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
 
             }
@@ -384,7 +401,7 @@ class Message {
     private String msg;
     private Double seqOrigin;
 
-    public Message(String id, String origin, int seq, String msg, boolean deliverable, Double seqOrigin){
+    Message(String id, String origin, int seq, String msg, boolean deliverable, Double seqOrigin){
         this.id = id;
         this.msg = msg;
         this.origin = origin;
@@ -393,23 +410,23 @@ class Message {
         this.seqOrigin = seqOrigin;
     }
 
-    public String getMsg() { return msg; }
+    String getMsg() { return msg; }
 
-    public boolean getDeliverable() { return deliverable; }
+    boolean getDeliverable() { return deliverable; }
 
-    public String getId() {
+    String getId() {
         return id;
     }
 
-    public String getOrigin() {
+    String getOrigin() {
         return origin;
     }
 
-    public Double getSequenceOrigin(){
+    Double getSequenceOrigin(){
         return Double.parseDouble(this.sequence+"."+this.origin);
     }
 
-    public Double getSeqOrigin() {
+    Double getSeqOrigin() {
         return seqOrigin;
     }
 }
@@ -420,7 +437,7 @@ class MessageComparator implements Comparator<Message>{
     public int compare(Message lhs, Message rhs) {
         if(lhs.getSeqOrigin() < rhs.getSeqOrigin()) {
             return -1;
-        }else{
+        }else {
             return 1;
         }
     }

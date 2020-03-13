@@ -26,6 +26,7 @@ import java.lang.reflect.Array;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -60,12 +61,10 @@ public class GroupMessengerActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_group_messenger);
 
-
         TelephonyManager telManager = (TelephonyManager) this.getSystemService(TELEPHONY_SERVICE);
-        String portString = telManager.getLine1Number().substring(telManager.getLine1Number().length() - 4);
+        String portStr = telManager.getLine1Number().substring(telManager.getLine1Number().length() - 4);
         //TODo: verify from PA1
-        portNumber = String.valueOf((Integer.parseInt(portString)) * 2);
-
+        portNumber = String.valueOf((Integer.parseInt(portStr)) * 2);
 
         try {
             ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
@@ -81,11 +80,6 @@ public class GroupMessengerActivity extends Activity {
         }
 
 
-
-        /*
-         * TODO: Use the TextView to display your messages. Though there is no grading component
-         * on how you display the messages, if you implement it, it'll make your debugging easier.
-         */
         TextView tv = (TextView) findViewById(R.id.textView1);
         tv.setMovementMethod(new ScrollingMovementMethod());
         
@@ -96,23 +90,16 @@ public class GroupMessengerActivity extends Activity {
         findViewById(R.id.button1).setOnClickListener(
                 new OnPTestClickListener(tv, getContentResolver()));
         
-        /*
-         * TODO: You need to register and implement an OnClickListener for the "Send" button.
-         * In your implementation you need to get the message from the input box (EditText)
-         * and send it to other AVDs.
-         */
+
         final EditText editText = (EditText) findViewById(R.id.editText1);
         Button send = (Button) findViewById(R.id.button4);
         send.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String msg = editText.getText().toString() + "\n";
-                Log.d("NAME_TAG", msg);
-                editText.setText(""); // This is one way to reset the input box.
-//                for(int i = 0; i<REMOTE_PORTS.length; i++) {
-//                    Log.d("NAME_TAG", msg);
-                    new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, portNumber);
-//                }
+            String msg = editText.getText().toString() + "\n";
+            Log.d("NAME_TAG", msg);
+            editText.setText(""); // This is one way to reset the input box.
+            new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, portNumber);
             }
         });
 
@@ -125,17 +112,12 @@ public class GroupMessengerActivity extends Activity {
         protected Void doInBackground(ServerSocket... sockets) {
             ServerSocket serverSocket = sockets[0];
             PriorityQueue<Message> queue = new PriorityQueue<Message>(25, new MessageComparator());
-            /*
-             * TODO: Fill in your server code that receives messages and passes them
-             * to onProgressUpdate().
-             *
-             */
+
 //          https://docs.oracle.com/javase/tutorial/networking/sockets/readingWriting.html
 
             try {
 
                 do {
-//                    TimeUnit.MINUTES.sleep(1);
                     Socket s = serverSocket.accept();
                     s.setSoTimeout(2000);
                     Log.d("SERVER", "Server Socket Accept");
@@ -149,11 +131,11 @@ public class GroupMessengerActivity extends Activity {
 //                            int suggestedSeqNo = Integer.parseInt(messageDetails[1]);
                             int proposeSeqNo = (seqNo > lastAccepted ? seqNo : lastAccepted) + 1;
                             seqNo = proposeSeqNo;
-                            Log.d("SERVER", "Propose Seq: "+proposeSeqNo);
+//                            Log.d("SERVER", "Propose Seq: "+proposeSeqNo);
 
                             Double seqOrigin = Double.parseDouble(proposeSeqNo+"."+messageDetails[1]);
 
-                            //TODO: Priority Queue here
+                            //Priority Queue here
 
                             Message messageObject = new Message(messageDetails[0], messageDetails[1],proposeSeqNo, messageDetails[3], false, seqOrigin);
                             queue.add(messageObject);
@@ -169,12 +151,10 @@ public class GroupMessengerActivity extends Activity {
 
 //                            Log.d("SERVER", "FINAL SEQ: "+finalSeqNo);
 
-                            //TODO: Priority Queue Find - Remove - Add
+                            //NOTE: Priority Queue Find - Remove - Add
                             Message msgToEdit = null;
-                            Iterator<Message> queue_iter = queue.iterator();
-                            while(queue_iter.hasNext()){
-                                Message msg = queue_iter.next();
-                                if(msg.getId().equals(messageDetails[0])){
+                            for (Message msg : queue) {
+                                if (msg.getId().equals(messageDetails[0])) {
                                     msgToEdit = msg;
                                     break;
                                 }
@@ -201,10 +181,10 @@ public class GroupMessengerActivity extends Activity {
 
                         }
 
-                        String failedClient = null;
+//                        String failedClient = null;
                         for (String i : avd.keySet()) {
                             Log.d("MAP", "key: " + i + " value: " + avd.get(i));
-                            failedClient = i;
+//                            failedClient = i;
                             if (!avd.get(i)) {
                                 Iterator<Message> queue_iter = queue.iterator();
                                 while(queue_iter.hasNext()){
@@ -222,7 +202,7 @@ public class GroupMessengerActivity extends Activity {
                         while (top != null && top.getDeliverable()){
 //                            (failedClient == null || !failedClient.equals(top.getOrigin())
                             Message head = queue.poll();
-                            Log.d("QUEUE", providerSeq+", "+head.getSequenceOrigin()+" - "+head.getMsg());
+//                            Log.d("QUEUE", providerSeq+", "+head.getSequenceOrigin()+" - "+head.getMsg());
                             this.publishProgress(String.valueOf(providerSeq), head.getMsg());
                             providerSeq++;
                             top = queue.peek();
@@ -259,11 +239,9 @@ public class GroupMessengerActivity extends Activity {
             cv.put("key", strings[0]);
             cv.put("value", strReceived);
 
-            Log.d("BIPUL", strings[0]+", "+strReceived);
-
             getContentResolver().insert(mUri, cv);
 
-            return;
+//            return;
         }
     }
 
@@ -276,7 +254,7 @@ public class GroupMessengerActivity extends Activity {
             String msg= msgs[0];
             String portNumber = msgs[1]; //self Port
             ArrayList<Double> sequencer = new ArrayList<Double>();
-            Double chosenSeqNo = 0.0;
+            Double chosenSeqNo;
             String uuid = UUID.randomUUID().toString();
 
             //sequence suggestion
@@ -293,7 +271,7 @@ public class GroupMessengerActivity extends Activity {
 
                         //Proposed seq No.
                         String msgToSend = uuid + ":" + portNumber + ":PROPOSED:" + msg;
-                        Log.d("CLIENT", msgToSend);
+//                        Log.d("CLIENT", msgToSend);
                         data_out.println(msgToSend);
                         Log.d("CLIENT", "Socket Message sent");
 
@@ -306,7 +284,7 @@ public class GroupMessengerActivity extends Activity {
                             Double receivedSeqNo = Double.parseDouble(message.split(":")[1]);
                             sequencer.add(receivedSeqNo);
                             socket.close();
-                            Log.d("CLIENT", "Client Socket close " + receivedSeqNo);
+//                            Log.d("CLIENT", "Client Socket close " + receivedSeqNo);
                         }else{
                             socket.close();
                             avd.put(remotePort, false);
@@ -327,8 +305,6 @@ public class GroupMessengerActivity extends Activity {
 
             //TODO: What if all Socket failed
             chosenSeqNo = Collections.max(sequencer);
-//            seqNo = chosenSeqNo+1;
-            Log.d("CLIENT", "Non Blocking call "+chosenSeqNo);
             //------------------------------------------------------------------------------------//
 
             //Maximum Sequence Number
@@ -353,7 +329,7 @@ public class GroupMessengerActivity extends Activity {
 
                         if (message != null && message.contains("FINAL_ACK")) {
                             socket.close();
-                            Log.d("CLIENT", "Client Socket close final ack");
+//                            Log.d("CLIENT", "Client Socket close final ack");
                         }else{
                             socket.close();
                             avd.put(remotePort, false);
@@ -422,9 +398,9 @@ class Message {
         return origin;
     }
 
-    Double getSequenceOrigin(){
-        return Double.parseDouble(this.sequence+"."+this.origin);
-    }
+//    Double getSequenceOrigin(){
+//        return Double.parseDouble(this.sequence+"."+this.origin);
+//    }
 
     Double getSeqOrigin() {
         return seqOrigin;

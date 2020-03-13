@@ -119,9 +119,6 @@ public class GroupMessengerProvider extends ContentProvider {
         rowBuilder.add(sharedPref.getString(selection, null));
 
 
-        Log.v("query", selection);
-
-//        return null;
         return cursor;
     }
 }

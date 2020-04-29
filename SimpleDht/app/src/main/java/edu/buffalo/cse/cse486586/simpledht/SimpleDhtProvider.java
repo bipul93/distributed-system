@@ -72,14 +72,33 @@ public class SimpleDhtProvider extends ContentProvider {
     public Uri insert(Uri uri, ContentValues values) {
         // TODO Auto-generated method stub
 
-        Set<String> valueSet = values.keySet();
-        for (String stringObjectEntry : valueSet) {
-//            Log.v("BIPUL", stringObjectEntry);
-            String key = (String) values.get("key");
-            String value = (String) values.get("value");
-            editor.putString(key, value);
+        String key = (String) values.get("key");
+        String value = (String) values.get("value");
+        String hashed_key = null;
+        try {
+            hashed_key = genHash(key);
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
         }
-        editor.commit();
+
+        if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
+            //Only one node in the ring
+            editor.putString(key, value);
+            editor.commit();
+        }else{
+            // Check for right target node
+            String target_node_port = get_target_node(hashed_key);
+
+            // check if target node is current node and store locally else pass to successor
+            if(target_node_port.equals(class_node.getPortStr())){
+                editor.putString(key, value);
+                editor.commit();
+            }else{
+                //pass to successor
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, target_node_port, Operation.DATA_ADD, hashed_key, key, value);
+            }
+        }
+
 
         return uri;
     }
@@ -114,7 +133,7 @@ public class SimpleDhtProvider extends ContentProvider {
 
         try {
             String node_id  = genHash(portStr);
-            class_node = new Node(node_id, node_id, node_id, portStr);
+            class_node = new Node(node_id, node_id, node_id, portStr, portStr);
             if(!portStr.equals(ROOT_PORT)){
                 Log.d(TAG, "Not Equal ports");
                 new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, portStr, Operation.NODE_ADD);
@@ -158,6 +177,28 @@ public class SimpleDhtProvider extends ContentProvider {
         return formatter.toString();
     }
 
+    private String get_target_node(String hashed_key){
+        String target_node_port = null;
+        Boolean base_node = false;
+        if(class_node.getPredecessor().compareTo(class_node.getId()) > 0){
+            base_node = true;
+        }
+        if(base_node){
+            if(hashed_key.compareTo(class_node.getId()) > 0 && hashed_key.compareTo(class_node.getPredecessor()) < 0 ){
+                target_node_port = class_node.getPortStr();
+            }else {
+                target_node_port = class_node.getSuccessorPort();
+            }
+        }else{
+            if(hashed_key.compareTo(class_node.getPredecessor()) > 0 && hashed_key.compareTo(class_node.getId()) < 0){
+                target_node_port = class_node.getPortStr();
+            }else{
+                target_node_port = class_node.getSuccessorPort();
+            }
+        }
+        return target_node_port;
+    }
+
 
     private class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 
@@ -180,7 +221,7 @@ public class SimpleDhtProvider extends ContentProvider {
                             String portStr = messageDetails[1];
 //                            Add Node to ring
                             String node_id  = genHash(portStr);
-                            Node node = new Node(node_id, null, null, portStr);
+                            Node node = new Node(node_id, null, null, portStr, null);
                             NODE_SET.add(node);
                             Iterator iter = NODE_SET.iterator();
                             while (iter.hasNext()){
@@ -188,8 +229,8 @@ public class SimpleDhtProvider extends ContentProvider {
                                 System.out.println(n.getInfo());
                             }
                             Node CURRENT_NODE = node;
-                            Node PREVIOUS_NODE = null;
-                            Node NEXT_NODE = null;
+                            Node PREVIOUS_NODE;
+                            Node NEXT_NODE;
 
 
                             if(CURRENT_NODE.getId().equals(NODE_SET.first().getId())){
@@ -204,8 +245,10 @@ public class SimpleDhtProvider extends ContentProvider {
                             }
 
                             PREVIOUS_NODE.setSuccessor(CURRENT_NODE.getId());
+                            PREVIOUS_NODE.setSuccessorPort(CURRENT_NODE.getPortStr());
                             CURRENT_NODE.setPredecessor(PREVIOUS_NODE.getId());
                             CURRENT_NODE.setSuccessor(NEXT_NODE.getId());
+                            CURRENT_NODE.setSuccessorPort(NEXT_NODE.getPortStr());
                             NEXT_NODE.setPredecessor(CURRENT_NODE.getId());
 
 
@@ -230,22 +273,26 @@ public class SimpleDhtProvider extends ContentProvider {
                             String source = messageDetails[2];
                             String type = messageDetails[3];
                             String destination = messageDetails[4];
+                            String sourceSuccPort = messageDetails[5];
 //                          update node details
 
                             if(source.equals(class_node.getId())){
                                 if(type.equals("SUCC")){
                                     class_node.setSuccessor(destination);
+                                    class_node.setSuccessorPort(sourceSuccPort);
                                 }
                                 if(type.equals("PRED")){
                                     class_node.setPredecessor(destination);
                                 }
                             }
+                            Log.d("NODE_UPDATE", class_node.getInfo());
                         }
                         Iterator iter = NODE_SET.iterator();
                         while (iter.hasNext()){
                             Node n = (Node) iter.next();
                             System.out.println(n.getInfo());
                         }
+
 
                     }
                 } while (true);
@@ -277,7 +324,7 @@ public class SimpleDhtProvider extends ContentProvider {
                 //Check if root_node or forward to successor
                 if(Operation.NODE_ADD.equals(operation)){
                     String node_id  = genHash(portStr);
-                    Node node = new Node(node_id, node_id, node_id, portStr);
+                    Node node = new Node(node_id, node_id, node_id, portStr, portStr);
                     System.out.println(node.getInfo());
                     socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(ROOT_PORT)*2);
                     msgToSend = Operation.NODE_ADD+":"+portStr;
@@ -286,8 +333,26 @@ public class SimpleDhtProvider extends ContentProvider {
                     String source = msgs[2];
                     String type = msgs[3];
                     String destination = msgs[4];
+                    String sourceSuccPort = msgs[5];
                     socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(portStr)*2);
-                    msgToSend = Operation.NODE_UPDATE+":"+portStr+":"+source+":"+type+":"+destination;
+//                    if(sourceSuccPort != null) {
+                    msgToSend = Operation.NODE_UPDATE + ":" + portStr + ":" + source + ":" + type + ":" + destination + ":" +sourceSuccPort;
+//                    }else{
+//                        msgToSend = Operation.NODE_UPDATE + ":" + portStr + ":" + source + ":" + type + ":" + destination;
+
+//                    }
+                }else if(operation.equals(Operation.DATA_ADD)){
+                    String source = msgs[2];
+                    String type = msgs[3];
+                    String destination = msgs[4];
+                    String sourceSuccPort = msgs[5];
+                    socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(portStr)*2);
+//                    if(sourceSuccPort != null) {
+                    msgToSend = Operation.NODE_UPDATE + ":" + portStr + ":" + source + ":" + type + ":" + destination + ":" +sourceSuccPort;
+//                    }else{
+//                        msgToSend = Operation.NODE_UPDATE + ":" + portStr + ":" + source + ":" + type + ":" + destination;
+
+//                    }
                 }
 
                 PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
@@ -307,7 +372,7 @@ public class SimpleDhtProvider extends ContentProvider {
 
 
     private void node_join_update(Node source, String type, Node destination){
-        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, source.getPortStr(), Operation.NODE_UPDATE, source.getId(), type, destination.getId());
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, source.getPortStr(), Operation.NODE_UPDATE, source.getId(), type, destination.getId(), type.equals("SUCC")?destination.getPortStr():null);
     }
 
 
@@ -319,16 +384,22 @@ class Node implements Comparable<Node> {
     private String predecessor;
     private String successor;
     private String portStr;
+    private String successorPort;
 
-    Node(String id, String successor, String predecessor, String portStr){
+    Node(String id, String successor, String predecessor, String portStr, String successorPort){
         this.id = id;
         this.successor = successor;
         this.predecessor = predecessor;
         this.portStr = portStr;
+        this.successorPort  = successorPort;
     }
 
     public void setSuccessor(String successor) {
         this.successor = successor;
+    }
+
+    public void setSuccessorPort(String successorPort) {
+        this.successorPort = successorPort;
     }
 
     public void setPredecessor(String predecessor) {
@@ -343,8 +414,20 @@ class Node implements Comparable<Node> {
         return portStr;
     }
 
+    public String getPredecessor() {
+        return predecessor;
+    }
+
+    public String getSuccessor() {
+        return successor;
+    }
+
+    public String getSuccessorPort() {
+        return successorPort;
+    }
+
     String getInfo(){
-        return id+" - "+portStr+" - "+predecessor+" - "+successor;
+        return id+" - "+portStr+" - "+predecessor+" - "+successor+" - "+successorPort;
     }
 
     @Override
@@ -356,9 +439,9 @@ class Node implements Comparable<Node> {
 class Operation{
     public static final String NODE_ADD = "NODE_ADD";
     public static final String NODE_UPDATE = "NODE_UPDATE";
-    private static final String DATA_ADD = "DATA_ADD";
-    private static final String QUERY_LOCAL = "QUERY_LOCAL";
-    private static final String QUERY_GLOBAL = "QUERY_GLOBAL";
-    private static final String DELETE_LOCAL = "DELETE_LOCAL";
-    private static final String DELETE_GLOBAL = "DELETE_GLOBAL";
+    public static final String DATA_ADD = "DATA_ADD";
+    public static final String QUERY_LOCAL = "QUERY_LOCAL";
+    public static final String QUERY_GLOBAL = "QUERY_GLOBAL";
+    public static final String DELETE_LOCAL = "DELETE_LOCAL";
+    public static final String DELETE_GLOBAL = "DELETE_GLOBAL";
 }

@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.io.SyncFailedException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -51,6 +50,28 @@ public class SimpleDhtProvider extends ContentProvider {
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         // TODO Auto-generated method stub
+
+        if(selection.equals("*")){
+            Log.d("DELETE", selection);
+            // return Global key values
+            if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
+                //Only one node in the ring
+                Log.d("DELETE", " Global Single node");
+                editor.clear();
+                editor.commit();
+            }else{
+                // Get all keys and values from each Node
+                Log.d("DELETE", "Global all nodes");
+                delete_global_data(class_node.getSuccessorPort(), class_node.getPortStr());
+
+            }
+        }else if(selection.equals("@")){
+            Log.d("DELETE", selection);
+            // return local key values
+            Log.d("DELETE", "LOCAL");
+            editor.clear();
+            editor.commit();
+        }
         return 0;
     }
 
@@ -77,7 +98,7 @@ public class SimpleDhtProvider extends ContentProvider {
 
         if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
             //Only one node in the ring
-            Log.d("INSERT", "Single node: "+key+" - "+value);
+//            Log.d("INSERT", "Single node: "+key+" - "+value);
             editor.putString(key, value);
             editor.commit();
         }else{
@@ -129,7 +150,7 @@ public class SimpleDhtProvider extends ContentProvider {
             String node_id  = genHash(portStr);
             class_node = new Node(node_id, node_id, node_id, portStr, portStr);
             if(!portStr.equals(ROOT_PORT)){
-                Log.d(TAG, "Not Equal ports");
+//                Log.d(TAG, "Not Equal ports");
                 new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, portStr, Operation.NODE_ADD);
             }else{
                 NODE_SET.add(class_node);
@@ -137,15 +158,16 @@ public class SimpleDhtProvider extends ContentProvider {
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         }
-        Log.d("CLASS_NODE", class_node.getSuccessorPort()+" -- "+class_node.getPortStr());
+//        Log.d("CLASS_NODE", class_node.getSuccessorPort()+" -- "+class_node.getPortStr());
         return false;
     }
 
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
         // TODO Auto-generated method stub
+        Log.d("QUERY", selection);
         if(selection.equals("*")){
-            Log.d("QUERY", selection);
+//            Log.d("QUERY", selection);
             // return Global key values
             if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
                 //Only one node in the ring
@@ -164,12 +186,15 @@ public class SimpleDhtProvider extends ContentProvider {
                 String data_from_node = fetch_global_data(class_node.getSuccessorPort(), class_node.getPortStr());
                 Log.d("DATA FETCH", data_from_node);
                 String[] pairs = data_from_node.split(",");
+                Log.d("DATA PAIR LENGTH", String.valueOf(pairs.length));
                 for (int i = 0; i < pairs.length; i++) {
                     String pair = pairs[i];
                     String[] keyValue = pair.split("=");
-                    MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
-                    rowBuilder.add(keyValue[0].trim());
-                    rowBuilder.add(keyValue[1].trim());
+                    if(!keyValue[0].trim().equals("") && !keyValue[1].trim().equals("")){
+                        MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
+                        rowBuilder.add(keyValue[0].trim());
+                        rowBuilder.add(keyValue[1].trim());
+                    }
                 }
                 return cursor;
             }
@@ -186,11 +211,38 @@ public class SimpleDhtProvider extends ContentProvider {
             }
             return cursor;
         }else{
-            MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
-            MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
-            rowBuilder.add(selection);
-            rowBuilder.add(sharedPref.getString(selection, null));
-            return cursor;
+            if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
+                //Only one node in the ring
+                MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
+                MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
+                rowBuilder.add(selection);
+                rowBuilder.add(sharedPref.getString(selection, null));
+                return cursor;
+            }else{
+                String target_node_port = null;
+                String hashed_key = null;
+                try {
+                    hashed_key = genHash(selection);
+                } catch (NoSuchAlgorithmException e) {
+                    e.printStackTrace();
+                }
+                target_node_port = get_target_node(hashed_key);
+//                Log.d(Operation.DATA_FIND_KEY, "initial target_node: "+ target_node_port + " - "+hashed_key);
+                String value = null;
+                // check if target node is current node and store locally else pass to successor
+                if(target_node_port.equals(class_node.getPortStr())){
+                    value = sharedPref.getString(selection, null);
+                }else{
+                    //pass to successor
+                    value = data_query_key(target_node_port, hashed_key, selection);
+//                    Log.d(Operation.DATA_FIND_KEY, "from successor: "+value);
+                }
+                MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
+                MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
+                rowBuilder.add(selection);
+                rowBuilder.add(value);
+                return cursor;
+            }
         }
     }
 
@@ -251,9 +303,15 @@ public class SimpleDhtProvider extends ContentProvider {
         // first get local data then move to successor
         Map<String, String> stored_local_data = (Map<String, String>) sharedPref.getAll();
         Log.d("fetch_global_data", String.valueOf(stored_local_data));
+        Log.d("local data length", String.valueOf(stored_local_data.size()));
+
+
+        String stored_data_string = "";
+        if(!stored_local_data.isEmpty()){
+            stored_data_string = stored_local_data.toString();
+            stored_data_string = stored_data_string.substring(1, stored_data_string.length()-1);
+        }
 //        global_data.putAll(stored_local_data);
-        String stored_data_string = stored_local_data.toString();
-        stored_data_string = stored_data_string.substring(1, stored_data_string.length()-1);
 
 
 //        String data_from_node = data_query(successorPort, origin_node);
@@ -264,18 +322,31 @@ public class SimpleDhtProvider extends ContentProvider {
             String data = data_query(successorPort, origin_node);
 //            data = data.substring(1, data.length()-1);
             Log.d("DATA FETCHED", data);
-            String[] pairs = data.split(",");
-            System.out.println(pairs.length);
-            for (String pair : pairs) {
-                String[] keyValue = pair.split("=");
-                data_from_node.put(keyValue[0], keyValue[1]);
+            if(data != "") {
+                data = ", " + data;
             }
-            Log.d("Mapped DATA", String.valueOf(data_from_node));
-            stored_local_data.putAll(data_from_node);
+//            String[] pairs = data.split(",");
+//            System.out.println(pairs.length);
+//            for (String pair : pairs) {
+//                String[] keyValue = pair.split("=");
+//                data_from_node.put(keyValue[0], keyValue[1]);
+//            }
+//            Log.d("Mapped DATA", String.valueOf(data_from_node));
+//            stored_local_data.putAll(data_from_node);
             stored_data_string = stored_data_string.concat(data);
             Log.d("Concat DATA", stored_data_string);
         }
         return stored_data_string;
+    }
+
+    private void delete_global_data(String successorPort, String origin_node) {
+        // first delete local data then move to successor
+        editor.clear();
+        editor.commit();
+
+        if (!successorPort.equals(origin_node)) {
+            delete_query(successorPort, origin_node);
+        }
     }
 
 
@@ -395,17 +466,57 @@ public class SimpleDhtProvider extends ContentProvider {
                             String successor_port = messageDetails[1];
                             String origin_node = messageDetails[2];
                             PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
-                            Log.d("SERVER DATA_QUERY", successor_port+" - "+origin_node);
+                            Log.d("SERVER DATA_QUERY", class_node.getSuccessorPort()+" - "+origin_node);
                             if(origin_node == class_node.getId()){
                                 // return complete
                                 data_out.println(Operation.QUERY_END);
                             }else{
                                 //get successor data and return
                                 String data = fetch_global_data(class_node.getSuccessorPort(), origin_node);
+                                Log.d(Operation.DATA_QUERY, "From successor: "+ data);
                                 data_out.println(Operation.DATA_QUERY+":"+data);
                             }
                             data_out.close();
+
+                        }else if(message.contains(Operation.DATA_FIND_KEY)){
+                            String[] messageDetails = message.split(":");
+                            String portStr = messageDetails[1];
+                            String hashed_key = messageDetails[2];
+                            String key = messageDetails[3];
+
+                            PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
+                            // Check for right target node
+                            String target_node_port = get_target_node(hashed_key);
+                            Log.d("SERVER","Target_node data query key: "+ target_node_port);
+                            // check if target node is current node and store locally else pass to successor
+                            if(target_node_port.equals(class_node.getPortStr())){
+                                String value = sharedPref.getString(key, null);
+                                Log.d(Operation.DATA_FIND_KEY, "value: "+ value);
+                                data_out.println(Operation.DATA_FIND_KEY+":"+value);
+                            }else{
+                                //pass to successor
+                                String value = data_query_key(target_node_port, hashed_key, key);
+                                data_out.println(Operation.DATA_FIND_KEY+":"+value);
+                            }
+                            data_out.close();
+
+                        }else if(message.contains(Operation.DATA_DELETE)){
+                            String[] messageDetails = message.split(":");
+                            String successor_port = messageDetails[1];
+                            String origin_node = messageDetails[2];
+                            PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
+                            Log.d("SERVER DATA_DELETE", successor_port+" - "+origin_node);
+                            if(origin_node == class_node.getId()){
+                                // return complete
+                                data_out.println(Operation.QUERY_END);
+                            }else{
+                                //get successor data and return
+                                delete_query(class_node.getSuccessorPort(), origin_node);
+                                data_out.println(Operation.DATA_DELETE);
+                            }
+                            data_out.close();
                         }
+
                         Iterator iter = NODE_SET.iterator();
                         while (iter.hasNext()){
                             Node n = (Node) iter.next();
@@ -475,7 +586,27 @@ public class SimpleDhtProvider extends ContentProvider {
 
                     // Get localdata and keep merging from successor and return
                     Log.d(Operation.DATA_QUERY, "Data Query from port "+ successorPort);
+
+                }else if(operation.equals(Operation.DATA_FIND_KEY)){
+                    String hashed_key = msgs[2];
+                    String key = msgs[3];
+                    socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(portStr)*2);
+                    msgToSend = Operation.DATA_FIND_KEY + ":" + portStr + ":" + hashed_key + ":" + key;
+
+                }else if(operation.equals(Operation.DATA_DELETE)){
+                    String successorPort = msgs[0];
+                    String origin_node = msgs[2];
+                    socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(successorPort)*2);
+                    Log.d(Operation.DATA_DELETE, "Data Delete from port "+ successorPort + " - origin "+origin_node);
+                    msgToSend = Operation.DATA_DELETE + ":" + successorPort + ":" + origin_node;
+
+                    Log.d(Operation.DATA_FIND_KEY, "Socket Message sent: "+msgToSend);
+
+
+                    // Get localdata and keep merging from successor and return
+                    Log.d(Operation.DATA_DELETE, "Data Query from port "+ successorPort);
                 }
+
 
                 PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
@@ -486,6 +617,16 @@ public class SimpleDhtProvider extends ContentProvider {
                 String message = data_in.readLine();
                 Log.d("CLIENT", "Client Socket receive " + message);
                 if (message != null && message.contains(Operation.DATA_QUERY)) {
+                    String [] data_from_server = message.split(":");
+                    String data = "";
+                    if(data_from_server.length > 1){
+                        data = data_from_server[1];
+                    }
+                    Log.d("CLIENT", "socket receive data query: "+data);
+                    if(data == "") System.out.println("BLANK");
+                    socket.close();
+                    return data;
+                }else if (message != null && message.contains(Operation.DATA_FIND_KEY)) {
                     String data = message.split(":")[1];
                     socket.close();
                     return data;
@@ -523,6 +664,27 @@ public class SimpleDhtProvider extends ContentProvider {
             e.printStackTrace();
         }
         return null;
+    }
+    private String data_query_key(String target_node_port, String hashed_key, String key){
+        try {
+            String value = new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, target_node_port, Operation.DATA_FIND_KEY, hashed_key, key).get();
+            Log.d(Operation.DATA_FIND_KEY, "Fuction value: "+value);
+            return value;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    private void delete_query(String successorPort, String origin_node) {
+        try {
+            new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, successorPort, Operation.DATA_DELETE, origin_node).get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
     }
 
 
@@ -591,7 +753,7 @@ class Operation{
     public static final String NODE_UPDATE = "NODE_UPDATE";
     public static final String DATA_ADD = "DATA_ADD";
     public static final String DATA_QUERY = "DATA_QUERY";
+    public static final String DATA_FIND_KEY = "DATA_FIND_KEY";
     public static final String QUERY_END = "QUERY_END";
-    public static final String DELETE_LOCAL = "DELETE_LOCAL";
-    public static final String DELETE_GLOBAL = "DELETE_GLOBAL";
+    public static final String DATA_DELETE = "DATA_DELETE";
 }

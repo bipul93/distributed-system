@@ -50,7 +50,7 @@ public class SimpleDhtProvider extends ContentProvider {
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         // TODO Auto-generated method stub
-
+        Log.d("DELETE", selection);
         if(selection.equals("*")){
             Log.d("DELETE", selection);
             // return Global key values
@@ -71,6 +71,41 @@ public class SimpleDhtProvider extends ContentProvider {
             Log.d("DELETE", "LOCAL");
             editor.clear();
             editor.commit();
+        }else{
+            if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
+                //Only one node in the ring
+                Log.d("DELETE", " KEY Single node");
+                if(sharedPref.contains(selection)){
+                    editor.remove(selection);
+                    editor.commit();
+                }else{
+                    Log.d("DELETE", " Key Not found");
+                }
+            }else{
+                Log.d("DELETE", " KEY from Global node");
+                String target_node_port = null;
+                String hashed_key = null;
+                try {
+                    hashed_key = genHash(selection);
+                } catch (NoSuchAlgorithmException e) {
+                    e.printStackTrace();
+                }
+                target_node_port = get_target_node(hashed_key);
+                Log.d(Operation.DATA_DELETE, "initial target_node: "+ target_node_port + " - "+hashed_key);
+                String value = null;
+                // check if target node is current node and store locally else pass to successor
+                if(target_node_port.equals(class_node.getPortStr())){
+                    if(sharedPref.contains(selection)){
+                        editor.remove(selection);
+                        editor.commit();
+                    }else{
+                        Log.d("DELETE", " Key Not found");
+                    }
+                }else{
+                    //pass to successor
+                    delete_query_key(target_node_port, hashed_key, selection);
+                }
+            }
         }
         return 0;
     }
@@ -515,6 +550,31 @@ public class SimpleDhtProvider extends ContentProvider {
                                 data_out.println(Operation.DATA_DELETE);
                             }
                             data_out.close();
+
+                        }else if(message.contains(Operation.DATA_REMOVE_KEY)) {
+                            String[] messageDetails = message.split(":");
+                            String portStr = messageDetails[1];
+                            String hashed_key = messageDetails[2];
+                            String key = messageDetails[3];
+
+                            PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
+                            // Check for right target node
+                            String target_node_port = get_target_node(hashed_key);
+                            Log.d("SERVER", "Target_node data remove delete key: " + target_node_port);
+                            // check if target node is current node and store locally else pass to successor
+                            if (target_node_port.equals(class_node.getPortStr())) {
+                                if(sharedPref.contains(key)){
+                                    editor.remove(key);
+                                    editor.commit();
+                                }else{
+                                    Log.d("SERVER", Operation.DATA_REMOVE_KEY + " Key Not found");
+                                }
+                            } else {
+                                //pass to successor
+                                delete_query_key(target_node_port, hashed_key, key);
+                            }
+                            data_out.println(Operation.DATA_REMOVE_KEY);
+                            data_out.close();
                         }
 
                         Iterator iter = NODE_SET.iterator();
@@ -605,6 +665,12 @@ public class SimpleDhtProvider extends ContentProvider {
 
                     // Get localdata and keep merging from successor and return
                     Log.d(Operation.DATA_DELETE, "Data Query from port "+ successorPort);
+
+                }else if(operation.equals(Operation.DATA_REMOVE_KEY)){
+                    String hashed_key = msgs[2];
+                    String key = msgs[3];
+                    socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(portStr)*2);
+                    msgToSend = Operation.DATA_REMOVE_KEY + ":" + portStr + ":" + hashed_key + ":" + key;
                 }
 
 
@@ -686,6 +752,10 @@ public class SimpleDhtProvider extends ContentProvider {
             e.printStackTrace();
         }
     }
+    private String delete_query_key(String target_node_port, String hashed_key, String key){
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, target_node_port, Operation.DATA_REMOVE_KEY, hashed_key, key);
+        return null;
+    }
 
 
 }//End of Providerclass
@@ -756,4 +826,5 @@ class Operation{
     public static final String DATA_FIND_KEY = "DATA_FIND_KEY";
     public static final String QUERY_END = "QUERY_END";
     public static final String DATA_DELETE = "DATA_DELETE";
+    public static final String DATA_REMOVE_KEY = "DATA_REMOVE_KEY";
 }

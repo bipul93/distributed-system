@@ -52,29 +52,29 @@ public class SimpleDhtProvider extends ContentProvider {
         // TODO Auto-generated method stub
         Log.d("DELETE", selection);
         if(selection.equals("*")){
-            Log.d("DELETE", selection);
+//            Log.d("DELETE", selection);
             // return Global key values
             if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
                 //Only one node in the ring
-                Log.d("DELETE", " Global Single node");
+//                Log.d("DELETE", " Global Single node");
                 editor.clear();
                 editor.commit();
             }else{
                 // Get all keys and values from each Node
-                Log.d("DELETE", "Global all nodes");
+//                Log.d("DELETE", "Global all nodes");
                 delete_global_data(class_node.getSuccessorPort(), class_node.getPortStr());
 
             }
         }else if(selection.equals("@")){
-            Log.d("DELETE", selection);
+//            Log.d("DELETE", selection);
             // return local key values
-            Log.d("DELETE", "LOCAL");
+//            Log.d("DELETE", "LOCAL");
             editor.clear();
             editor.commit();
         }else{
             if(class_node.getPredecessor().equals(class_node.getId()) && class_node.getSuccessor().equals(class_node.getId()) && NODE_SET.size() == 1){
                 //Only one node in the ring
-                Log.d("DELETE", " KEY Single node");
+//                Log.d("DELETE", " KEY Single node");
                 if(sharedPref.contains(selection)){
                     editor.remove(selection);
                     editor.commit();
@@ -82,7 +82,7 @@ public class SimpleDhtProvider extends ContentProvider {
                     Log.d("DELETE", " Key Not found");
                 }
             }else{
-                Log.d("DELETE", " KEY from Global node");
+//                Log.d("DELETE", " KEY from Global node");
                 String target_node_port = null;
                 String hashed_key = null;
                 try {
@@ -91,7 +91,7 @@ public class SimpleDhtProvider extends ContentProvider {
                     e.printStackTrace();
                 }
                 target_node_port = get_target_node(hashed_key);
-                Log.d(Operation.DATA_DELETE, "initial target_node: "+ target_node_port + " - "+hashed_key);
+//                Log.d(Operation.DATA_DELETE, "initial target_node: "+ target_node_port + " - "+hashed_key);
                 String value = null;
                 // check if target node is current node and store locally else pass to successor
                 if(target_node_port.equals(class_node.getPortStr())){
@@ -216,12 +216,12 @@ public class SimpleDhtProvider extends ContentProvider {
                 return cursor;
             }else{
                 // Get all keys and values from each Node
-                Log.d("QUERY", "get from all nodes");
+//                Log.d("QUERY", "get from all nodes");
                 MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
                 String data_from_node = fetch_global_data(class_node.getSuccessorPort(), class_node.getPortStr());
-                Log.d("DATA FETCH", data_from_node);
+//                Log.d("DATA FETCH", data_from_node);
                 String[] pairs = data_from_node.split(",");
-                Log.d("DATA PAIR LENGTH", String.valueOf(pairs.length));
+//                Log.d("DATA PAIR LENGTH", String.valueOf(pairs.length));
                 for (int i = 0; i < pairs.length; i++) {
                     String pair = pairs[i];
                     String[] keyValue = pair.split("=");
@@ -234,7 +234,7 @@ public class SimpleDhtProvider extends ContentProvider {
                 return cursor;
             }
         }else if(selection.equals("@")){
-            Log.d("QUERY", selection);
+//            Log.d("QUERY", selection);
             // return local key values
             MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
             Map<String, ?> stored_data = sharedPref.getAll();
@@ -315,30 +315,14 @@ public class SimpleDhtProvider extends ContentProvider {
                 target_node_port = class_node.getSuccessorPort();
             }
         }
-//        if(class_node.getPredecessor().compareTo(class_node.getId()) > 0){
-//            base_node = true;
-//        }
-//        if(base_node){
-//            if(hashed_key.compareTo(class_node.getId()) > 0 && hashed_key.compareTo(class_node.getPredecessor()) < 0 ){
-//                target_node_port = class_node.getPortStr();
-//            }else {
-//                target_node_port = class_node.getSuccessorPort();
-//            }
-//        }else{
-//            if(hashed_key.compareTo(class_node.getPredecessor()) > 0 && hashed_key.compareTo(class_node.getId()) < 0){
-//                target_node_port = class_node.getPortStr();
-//            }else{
-//                target_node_port = class_node.getSuccessorPort();
-//            }
-//        }
         return target_node_port;
     }
 
     private String fetch_global_data(String successorPort, String origin_node) {
         // first get local data then move to successor
         Map<String, String> stored_local_data = (Map<String, String>) sharedPref.getAll();
-        Log.d("fetch_global_data", String.valueOf(stored_local_data));
-        Log.d("local data length", String.valueOf(stored_local_data.size()));
+//        Log.d("fetch_global_data", String.valueOf(stored_local_data));
+//        Log.d("local data length", String.valueOf(stored_local_data.size()));
 
 
         String stored_data_string = "";
@@ -350,26 +334,18 @@ public class SimpleDhtProvider extends ContentProvider {
 
 
 //        String data_from_node = data_query(successorPort, origin_node);
-        Log.d("STORED LOCAL DATA", stored_data_string);
+//        Log.d("STORED LOCAL DATA", stored_data_string);
         if (!successorPort.equals(origin_node)) {
 
             Map<String, String> data_from_node = new HashMap<String, String>();
             String data = data_query(successorPort, origin_node);
 //            data = data.substring(1, data.length()-1);
-            Log.d("DATA FETCHED", data);
+//            Log.d("DATA FETCHED", data);
             if(data != "") {
                 data = ", " + data;
             }
-//            String[] pairs = data.split(",");
-//            System.out.println(pairs.length);
-//            for (String pair : pairs) {
-//                String[] keyValue = pair.split("=");
-//                data_from_node.put(keyValue[0], keyValue[1]);
-//            }
-//            Log.d("Mapped DATA", String.valueOf(data_from_node));
-//            stored_local_data.putAll(data_from_node);
             stored_data_string = stored_data_string.concat(data);
-            Log.d("Concat DATA", stored_data_string);
+//            Log.d("Concat DATA", stored_data_string);
         }
         return stored_data_string;
     }
@@ -609,7 +585,7 @@ public class SimpleDhtProvider extends ContentProvider {
 
             String result= "";
 
-            Log.d("CLIENT", "Operation: "+operation);
+//            Log.d("CLIENT", "Operation: "+operation);
 
             Socket socket = null;
             String msgToSend = "";

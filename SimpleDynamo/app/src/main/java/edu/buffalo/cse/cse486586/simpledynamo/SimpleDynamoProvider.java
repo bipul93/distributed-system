@@ -7,10 +7,13 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Formatter;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -151,6 +154,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 
 
+
 		try {
 			Node n1 = new Node(genHash("5554"), genHash("5558"), genHash("5556"), "5554", "5558");
 			Node n2 = new Node(genHash("5556"), genHash("5554"), genHash("5562"), "5556", "5554");
@@ -179,6 +183,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 
 		Log.d("CLASS NODE", class_node.getInfo());
+		Log.d("TEST", get_target_node_list("KMlUqAeTXEjuBWmcRxztqSzSG1uaa3qG").get(0).getPortStr());
+
+//		new Thread(new Recovery()).start();
+		recoverData();
 
 //		try {
 //			String node_id  = genHash(portStr);
@@ -234,33 +242,46 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 		}else if(selection.equals("@")){
 			MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
+			lock.readLock().lock();
 			Map<String, ?> stored_data = sharedPref.getAll();
+			lock.readLock().unlock();
 			Log.d(Operation.DATA_QUERY, stored_data.toString());
+			int i = 0;
 			for (Map.Entry<String, ?> data : stored_data.entrySet()){
 				MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
 //                Log.d("QUERY", data.getKey()+" -- "+data.getValue());
 				rowBuilder.add(data.getKey());
 				rowBuilder.add(data.getValue());
+				i= i+1;
+				Log.d(Operation.DATA_QUERY, (i)+" "+data.getKey());
 			}
 			return cursor;
 		}else{
 			String target_node_port = null;
 			String hashed_key = null;
+			List<Node> target_nodes = new ArrayList<Node>();
 			try {
 				hashed_key = genHash(selection);
 			} catch (NoSuchAlgorithmException e) {
 				e.printStackTrace();
 			}
-			target_node_port = get_target_node_list(hashed_key).get(0).getPortStr();
+			target_nodes = get_target_node_list(hashed_key);
+			target_node_port = target_nodes.get(2).getPortStr();
                 Log.d(Operation.DATA_FIND_KEY, "initial target_node: "+ target_node_port + " - "+hashed_key +" - "+class_node.getPortStr());
 			String value = null;
 			// check if target node is current node and store locally else pass to successor
 			if(target_node_port.equals(class_node.getPortStr())){
+				lock.readLock().lock();
 				value = sharedPref.getString(selection, null);
+				lock.readLock().unlock();
 			}else{
 				//pass to right node
 				value = data_query_key(target_node_port, hashed_key, selection);
-//                    Log.d(Operation.DATA_FIND_KEY, "from successor: "+value);
+              	Log.d(Operation.DATA_FIND_KEY, "from successor: "+value);
+				if(value.equals(Operation.KEY_NODE_UNREACHABLE)){
+					target_node_port = target_nodes.get(1).getPortStr();
+					value = data_query_key(target_node_port, hashed_key, selection);
+				}
 			}
 			MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
 			MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
@@ -439,7 +460,9 @@ public class SimpleDynamoProvider extends ContentProvider {
 							data_out.close();
 
 						}else if(message.contains(Operation.DATA_QUERY)){
+							lock.readLock().lock();
 							Map<String, String> stored_local_data = (Map<String, String>) sharedPref.getAll();
+							lock.readLock().unlock();
 
 							String stored_data_string = "";
 							if(!stored_local_data.isEmpty()){
@@ -554,6 +577,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					msgToSend = Operation.DATA_REMOVE_KEY + ":" + portStr + ":" + hashed_key + ":" + key;
 				}
 
+				socket.setSoTimeout(2000);
 
 				PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
@@ -579,9 +603,16 @@ public class SimpleDynamoProvider extends ContentProvider {
 					return data;
 				}else{
 					socket.close();
+					if(operation.equals(Operation.DATA_FIND_KEY) && message == null){
+						return Operation.KEY_NODE_UNREACHABLE;
+					}
 				}
 
 
+			} catch (SocketTimeoutException e) {
+				Log.e("CONNECTION", "CLIENT SocketTimeoutException");
+			} catch (UnknownHostException e) {
+				Log.e("CONNECTION", "CLIENT UnknownHostException");
 			} catch (IOException e) {
 				if(Operation.NODE_UPDATE.equals(operation)){
 					Log.d("CONNECTION", "NODE UPDATE FAILED to port "+portStr);
@@ -637,7 +668,68 @@ public class SimpleDynamoProvider extends ContentProvider {
 	}
 
 
+	class Recovery implements Runnable {
+
+		public void run() {
+			// code in the other thread, can reference "var" variable
+			recoverData();
+		}
+	}
+
+	private void recoverData(){
+		// Get neighbour list and figure out the keys
+		Log.d("RECOVERY", "RECOVERING DATA");
+		Node node1 = NODE_SET.higher(class_node) != null ? NODE_SET.higher(class_node) : NODE_SET.first();
+		Node node2 = NODE_SET.higher(node1) != null ? NODE_SET.higher(node1) : NODE_SET.first();
+		Node node3 = NODE_SET.lower(class_node) != null ? NODE_SET.lower(class_node) : NODE_SET.last();
+		Node node4 = NODE_SET.lower(node3) != null ? NODE_SET.lower(node3) : NODE_SET.last();
+		Map<String, String> data_list = new HashMap<String, String>(); //sharedPref.getAll();
+		List<Node> neighbourList = new ArrayList<Node>();
+		neighbourList.add(node1);
+		neighbourList.add(node2);
+		neighbourList.add(node3);
+		Log.d("BELONG", class_node.getPortStr()+" - "+node1.getPortStr()+" - "+node2.getPortStr()+" - "+node3.getPortStr());
+		for(Node neighbour: neighbourList) {
+			String data = null;
+			try {
+				data = new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, neighbour.getPortStr(), Operation.DATA_QUERY).get();
+				Log.d(Operation.DATA_QUERY, "RECOVERY: "+ data);
+				String[] pairs = data.split(",");
+				for (String pair:pairs) {
+//					Log.d("PAIR", pair);
+					String[] keyValue = pair.split("=");
+					if(!keyValue[0].trim().equals("") && !keyValue[1].trim().equals("")){
+						data_list.put(keyValue[0].trim(), keyValue[1].trim());
+					}
+				}
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				e.printStackTrace();
+			}
+		}
+		//check where it belongs
+		Log.d("BELONG", class_node.getId()+" - "+node2.getId()+" - "+node3.getId());
+		if(!data_list.isEmpty()) {
+			for (Map.Entry<String, String> entry : data_list.entrySet()) {
+				String hashed_key = null;
+				try {
+					hashed_key = genHash(entry.getKey());
+				} catch (NoSuchAlgorithmException e) {
+					e.printStackTrace();
+				}
+				String belonged_node_id = get_target_node_list(hashed_key).get(0).getId();
+				Log.d("BELONG", entry.getKey()+" - "+belonged_node_id);
+				if (belonged_node_id.equals(class_node.getId()) || belonged_node_id.equals(node3.getId()) || belonged_node_id.equals(node4.getId())) {
+					add_data(entry.getKey(), entry.getValue());
+				}
+			}
+		}
+	}
+
 }
+
+
 
 class Node implements Comparable<Node> {
 	private String id;
@@ -702,6 +794,7 @@ class Operation{
 	public static final String DATA_ADD = "DATA_ADD";
 	public static final String DATA_QUERY = "DATA_QUERY";
 	public static final String DATA_FIND_KEY = "DATA_FIND_KEY";
+	public static final String KEY_NODE_UNREACHABLE = "KEY_NODE_UNREACHABLE";
 	public static final String QUERY_END = "QUERY_END";
 	public static final String DATA_DELETE = "DATA_DELETE";
 	public static final String DATA_REMOVE_KEY = "DATA_REMOVE_KEY";

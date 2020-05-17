@@ -79,8 +79,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 
 			for(Node node: target_nodes){
-				Log.d(Operation.DATA_DELETE, "initial target_node: "+ node.getPortStr() + " - "+hashed_key + " - "+class_node.getPortStr());
-				Log.d("NODE TARGET", node.getPortStr()+ " - " + selection);
+//				Log.d(Operation.DATA_DELETE, "initial target_node: "+ node.getPortStr() + " - "+hashed_key + " - "+class_node.getPortStr());
+//				Log.d("NODE TARGET", node.getPortStr()+ " - " + selection);
 				if(node.getPortStr().equals(class_node.getPortStr())){
 					lock.writeLock().lock();
 					if(sharedPref.contains(selection)){
@@ -118,10 +118,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 		} catch (NoSuchAlgorithmException e) {
 			e.printStackTrace();
 		}
-		Log.d("NODE", target_nodes.toString());
+//		Log.d("NODE", target_nodes.toString());
 
 		for(Node node: target_nodes){
-			Log.d("NODE TARGET", node.getPortStr()+ " - " + key);
+//			Log.d("NODE TARGET", node.getPortStr()+ " - " + key);
 			new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, node.getPortStr(), Operation.DATA_ADD, key, value);
 		}
 
@@ -136,7 +136,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		editor = sharedPref.edit();
 		editor.clear();
 
-        Log.d("TEST", sharedPref.getAll().toString());
+//        Log.d("TEST", sharedPref.getAll().toString());
 		//	https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/locks/ReentrantReadWriteLock.html
 		lock = new ReentrantReadWriteLock();
 
@@ -146,7 +146,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 		selfPort = portStr;
 
-		System.out.println(portStr + " -- " + portNumber);
+//		System.out.println(portStr + " -- " + portNumber);
 
 
 		try {
@@ -180,14 +180,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 		while (iter.hasNext()){
 			Node n = (Node) iter.next();
 			if(n.getPortStr().equals(portStr)){
-				Log.d("CLASS NODE", "EQUAL");
+//				Log.d("CLASS NODE", "EQUAL");
 				class_node = n;
 			}
 			System.out.println(n.getInfo());
 		}
 
-		Log.d("CLASS NODE", class_node.getInfo());
-		Log.d("TEST", get_target_node_list("KMlUqAeTXEjuBWmcRxztqSzSG1uaa3qG").get(0).getPortStr());
+//		Log.d("CLASS NODE", class_node.getInfo());
+//		Log.d("TEST", get_target_node_list("KMlUqAeTXEjuBWmcRxztqSzSG1uaa3qG").get(0).getPortStr());
 
 //		new Thread(new Recovery()).start();
 		try {
@@ -236,7 +236,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				} catch (ExecutionException e) {
 					e.printStackTrace();
 				}
-				Log.d(Operation.DATA_QUERY, data);
+//				Log.d(Operation.DATA_QUERY, data);
 				String[] pairs = data.split(",");
 				for (String pair:pairs) {
 //					Log.d("PAIR", pair);
@@ -256,7 +256,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 			lock.readLock().lock();
 			Map<String, ?> stored_data = sharedPref.getAll();
 			lock.readLock().unlock();
-			Log.d(Operation.DATA_QUERY, stored_data.toString());
+//			Log.d(Operation.DATA_QUERY, stored_data.toString());
 			int i = 0;
 			for (Map.Entry<String, ?> data : stored_data.entrySet()){
 				MatrixCursor.RowBuilder rowBuilder = cursor.newRow();
@@ -264,7 +264,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				rowBuilder.add(data.getKey());
 				rowBuilder.add(data.getValue());
 				i= i+1;
-				Log.d(Operation.DATA_QUERY, (i)+" "+data.getKey());
+//				Log.d(Operation.DATA_QUERY, (i)+" "+data.getKey());
 			}
 			return cursor;
 		}else{
@@ -278,7 +278,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 			target_nodes = get_target_node_list(hashed_key);
 			target_node_port = target_nodes.get(2).getPortStr();
-                Log.d(Operation.DATA_FIND_KEY, "initial target_node: "+ target_node_port + " - "+hashed_key +" - "+class_node.getPortStr());
+//                Log.d(Operation.DATA_FIND_KEY, "initial target_node: "+ target_node_port + " - "+hashed_key +" - "+class_node.getPortStr());
 			String value = null;
 			// check if target node is current node and store locally else pass to successor
 			if(target_node_port.equals(class_node.getPortStr())){
@@ -288,11 +288,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}else{
 				//pass to right node
 				value = data_query_key(target_node_port, hashed_key, selection);
-              	Log.d(Operation.DATA_FIND_KEY, "from successor: "+value + " - "+selection);
+//              	Log.d(Operation.DATA_FIND_KEY, "from successor: "+value + " - "+selection);
 				if(value.equals(Operation.KEY_NODE_UNREACHABLE)){
 					target_node_port = target_nodes.get(1).getPortStr();
 					value = data_query_key(target_node_port, hashed_key, selection);
-					Log.d(Operation.DATA_FIND_KEY, "from next: "+value + " - "+selection);
+//					Log.d(Operation.DATA_FIND_KEY, "from next: "+value + " - "+selection);
 				}
 			}
 			MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
@@ -366,12 +366,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 			try {
 				do {
 					Socket s = serverSocket.accept();
-					Log.d("SERVER", "Server Socket Accept");
+//					Log.d("SERVER", "Server Socket Accept");
 					BufferedReader data_in = new BufferedReader(new InputStreamReader(s.getInputStream()));
 
 					String message;
 					if ((message = data_in.readLine()) != null) {
-						Log.d("SERVER", message);
+//						Log.d("SERVER", message);
 						if(message.contains(Operation.NODE_ADD)) {
 							String[] messageDetails = message.split(":");
 							String portStr = messageDetails[1];
@@ -397,7 +397,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 								NEXT_NODE = NODE_SET.higher(CURRENT_NODE);
 							}
 
-							System.out.println(" NODE DETAILS: "+PREVIOUS_NODE.getPortStr()+" - "+CURRENT_NODE.getPortStr()+" - "+NEXT_NODE.getPortStr());
+//							System.out.println(" NODE DETAILS: "+PREVIOUS_NODE.getPortStr()+" - "+CURRENT_NODE.getPortStr()+" - "+NEXT_NODE.getPortStr());
 
 							PREVIOUS_NODE.setSuccessor(CURRENT_NODE.getId());
 							PREVIOUS_NODE.setSuccessorPort(CURRENT_NODE.getPortStr());
@@ -409,7 +409,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 							String stream_msg = "NEW";
 							while (iter.hasNext()){
 								Node n = (Node) iter.next();
-								System.out.println(n.getInfo());
+//								System.out.println(n.getInfo());
 								if(stream_msg.contains("NEW")){
 									stream_msg = n.getInfo();
 								}else {
@@ -448,14 +448,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 								}
 							}
 
-							Log.d(Operation.NODE_UPDATE, "SERVER NODE UPDATE");
+//							Log.d(Operation.NODE_UPDATE, "SERVER NODE UPDATE");
 							Iterator iter = NODE_SET.iterator();
 							while (iter.hasNext()){
 								Node n = (Node) iter.next();
 								System.out.println(n.getInfo());
 							}
 
-							Log.d("NODE_UPDATE", class_node.getInfo());
+//							Log.d("NODE_UPDATE", class_node.getInfo());
 							PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
 							data_out.println(Operation.NODE_UPDATE);
 							data_out.close();
@@ -490,7 +490,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 								stored_data_string = stored_data_string.substring(1, stored_data_string.length()-1);
 							}
 							PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
-							Log.d(Operation.DATA_QUERY, stored_data_string);
+//							Log.d(Operation.DATA_QUERY, stored_data_string);
 							data_out.println(Operation.DATA_QUERY+":"+stored_data_string);
 							data_out.close();
 
@@ -504,11 +504,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 //							Node belonged_node_id = get_target_node_list(hashed_key).get(2);
 							// check if target node is current node and store locally else pass to successor
 //							if (belonged_node_id.getId().equals(class_node.getId())) {
-								Log.d("SERVER","SAME NODE key: "+key);
+//								Log.d("SERVER","SAME NODE key: "+key);
 								lock.readLock().lock();
 								if(sharedPref.contains(key)) {
 									String value = sharedPref.getString(key, null);
-									Log.d(Operation.DATA_FIND_KEY, "value: " + value);
+//									Log.d(Operation.DATA_FIND_KEY, "value: " + value);
 									data_out.println(Operation.DATA_FIND_KEY+":"+value);
 									data_out.close();
 								}else{
@@ -520,9 +520,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 //								data_out.println(Operation.DATA_FIND_KEY+":"+value);
 //								data_out.close();
 //							}
-
-						}else if(message.contains(Operation.DATA_DELETE)){
-
 
 						}else if(message.contains(Operation.DATA_REMOVE_KEY)) {
 							String[] messageDetails = message.split(":");
@@ -617,18 +614,18 @@ public class SimpleDynamoProvider extends ContentProvider {
 				PrintWriter data_out = new PrintWriter(socket.getOutputStream(), true);
 
 				data_out.println(msgToSend);
-				Log.d("CLIENT", "Socket Message sent: "+msgToSend);
+//				Log.d("CLIENT", "Socket Message sent: "+msgToSend);
 
 				BufferedReader data_in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 				String message = data_in.readLine();
-				Log.d("CLIENT", "Client Socket receive " + message);
+//				Log.d("CLIENT", "Client Socket receive " + message);
 				if (message != null && message.contains(Operation.DATA_QUERY)) {
 					String [] data_from_server = message.split(":");
 					String data = "";
 					if(data_from_server.length > 1){
 						data = data_from_server[1];
 					}
-					Log.d("CLIENT", "socket receive data query: "+data);
+//					Log.d("CLIENT", "socket receive data query: "+data);
 					if(data == "") System.out.println("BLANK");
 					socket.close();
 					return data;
@@ -687,7 +684,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private String data_query_key(String target_node_port, String hashed_key, String key){
 		try {
 			String value = new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, target_node_port, Operation.DATA_FIND_KEY, hashed_key, key).get();
-			Log.d(Operation.DATA_FIND_KEY, "Fuction value: "+value);
+//			Log.d(Operation.DATA_FIND_KEY, "Fuction value: "+value);
 			return value;
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -713,7 +710,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	private void recoverData(){
 		// Get neighbour list and figure out the keys
-		Log.d("RECOVERY", "RECOVERING DATA");
+//		Log.d("RECOVERY", "RECOVERING DATA");
 		Node node1 = NODE_SET.higher(class_node) != null ? NODE_SET.higher(class_node) : NODE_SET.first();
 		Node node2 = NODE_SET.higher(node1) != null ? NODE_SET.higher(node1) : NODE_SET.first();
 		Node node3 = NODE_SET.lower(class_node) != null ? NODE_SET.lower(class_node) : NODE_SET.last();
@@ -723,12 +720,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 		neighbourList.add(node1);
 		neighbourList.add(node2);
 		neighbourList.add(node3);
-		Log.d("BELONG", class_node.getPortStr()+" - "+node1.getPortStr()+" - "+node2.getPortStr()+" - "+node3.getPortStr());
+//		Log.d("BELONG", class_node.getPortStr()+" - "+node1.getPortStr()+" - "+node2.getPortStr()+" - "+node3.getPortStr());
 		for(Node neighbour: neighbourList) {
 			String data = null;
 			try {
 				data = new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, neighbour.getPortStr(), Operation.DATA_QUERY).get();
-				Log.d(Operation.DATA_QUERY, "RECOVERY: "+ data);
+//				Log.d(Operation.DATA_QUERY, "RECOVERY: "+ data);
 				String[] pairs = data.split(",");
 				for (String pair:pairs) {
 //					Log.d("PAIR", pair);
@@ -744,7 +741,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 		}
 		//check where it belongs
-		Log.d("BELONG", class_node.getId()+" - "+node2.getId()+" - "+node3.getId());
+//		Log.d("BELONG", class_node.getId()+" - "+node2.getId()+" - "+node3.getId());
 		if(!data_list.isEmpty()) {
 			for (Map.Entry<String, String> entry : data_list.entrySet()) {
 				String hashed_key = null;
@@ -754,7 +751,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					e.printStackTrace();
 				}
 				String belonged_node_id = get_target_node_list(hashed_key).get(0).getId();
-				Log.d("BELONG", entry.getKey()+" - "+belonged_node_id);
+//				Log.d("BELONG", entry.getKey()+" - "+belonged_node_id);
 				if (belonged_node_id.equals(class_node.getId()) || belonged_node_id.equals(node3.getId()) || belonged_node_id.equals(node4.getId())) {
 //					add_data(entry.getKey(), entry.getValue());
 					editor.putString(entry.getKey(), entry.getValue());

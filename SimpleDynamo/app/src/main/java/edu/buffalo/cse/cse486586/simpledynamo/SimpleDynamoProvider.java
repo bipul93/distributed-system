@@ -64,8 +64,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 		if(selection.equals("*")){
 			return 0;
 		}else if(selection.equals("@")){
+			lock.writeLock().lock();
 			editor.clear();
 			editor.commit();
+			lock.writeLock().unlock();
 		}else{
 			String hashed_key = null;
 			List<Node> target_nodes = null;
@@ -80,12 +82,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 				Log.d(Operation.DATA_DELETE, "initial target_node: "+ node.getPortStr() + " - "+hashed_key + " - "+class_node.getPortStr());
 				Log.d("NODE TARGET", node.getPortStr()+ " - " + selection);
 				if(node.getPortStr().equals(class_node.getPortStr())){
+					lock.writeLock().lock();
 					if(sharedPref.contains(selection)){
 						editor.remove(selection);
 						editor.commit();
 					}else{
 						Log.d("DELETE", " Key Not found");
 					}
+					lock.writeLock().unlock();
 				}else{
 					delete_query_key(node.getPortStr(), hashed_key, selection);
 				}
@@ -186,7 +190,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 		Log.d("TEST", get_target_node_list("KMlUqAeTXEjuBWmcRxztqSzSG1uaa3qG").get(0).getPortStr());
 
 //		new Thread(new Recovery()).start();
-		recoverData();
+		try {
+			lock.writeLock().lock();
+			recoverData();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}finally {
+			lock.writeLock().unlock();
+		}
 
 //		try {
 //			String node_id  = genHash(portStr);
@@ -277,10 +288,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}else{
 				//pass to right node
 				value = data_query_key(target_node_port, hashed_key, selection);
-              	Log.d(Operation.DATA_FIND_KEY, "from successor: "+value);
+              	Log.d(Operation.DATA_FIND_KEY, "from successor: "+value + " - "+selection);
 				if(value.equals(Operation.KEY_NODE_UNREACHABLE)){
 					target_node_port = target_nodes.get(1).getPortStr();
 					value = data_query_key(target_node_port, hashed_key, selection);
+					Log.d(Operation.DATA_FIND_KEY, "from next: "+value + " - "+selection);
 				}
 			}
 			MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
@@ -453,7 +465,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 							String key = messageDetails[2];
 							String value = messageDetails[3];
 
-							add_data(key, value);
+							try {
+								lock.writeLock().lock();
+								editor.putString(key, value);
+								editor.commit();
+							} catch (Exception e) {
+								e.printStackTrace();
+							}finally {
+								lock.writeLock().unlock();
+							}
 
 							PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
 							data_out.println(Operation.DATA_ADD);
@@ -481,12 +501,25 @@ public class SimpleDynamoProvider extends ContentProvider {
 							String key = messageDetails[3];
 
 							PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
-							Log.d("SERVER","Target_node data query key: "+ portStr);
+//							Node belonged_node_id = get_target_node_list(hashed_key).get(2);
 							// check if target node is current node and store locally else pass to successor
-							String value = sharedPref.getString(key, null);
-							Log.d(Operation.DATA_FIND_KEY, "value: "+ value);
-							data_out.println(Operation.DATA_FIND_KEY+":"+value);
-							data_out.close();
+//							if (belonged_node_id.getId().equals(class_node.getId())) {
+								Log.d("SERVER","SAME NODE key: "+key);
+								lock.readLock().lock();
+								if(sharedPref.contains(key)) {
+									String value = sharedPref.getString(key, null);
+									Log.d(Operation.DATA_FIND_KEY, "value: " + value);
+									data_out.println(Operation.DATA_FIND_KEY+":"+value);
+									data_out.close();
+								}else{
+									Log.d("SERVER", Operation.DATA_FIND_KEY + " Key Not found");
+								}
+								lock.readLock().unlock();
+//							}else {
+//								String value = data_query_key(belonged_node_id.getPortStr(), hashed_key, key);
+//								data_out.println(Operation.DATA_FIND_KEY+":"+value);
+//								data_out.close();
+//							}
 
 						}else if(message.contains(Operation.DATA_DELETE)){
 
@@ -498,12 +531,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 							String key = messageDetails[3];
 
 							PrintWriter data_out = new PrintWriter(s.getOutputStream(), true);
+							lock.writeLock().lock();
 							if(sharedPref.contains(key)){
 								editor.remove(key);
 								editor.commit();
 							}else{
 								Log.d("SERVER", Operation.DATA_REMOVE_KEY + " Key Not found");
 							}
+							lock.writeLock().unlock();
 							data_out.println(Operation.DATA_REMOVE_KEY);
 							data_out.close();
 						}
@@ -721,7 +756,9 @@ public class SimpleDynamoProvider extends ContentProvider {
 				String belonged_node_id = get_target_node_list(hashed_key).get(0).getId();
 				Log.d("BELONG", entry.getKey()+" - "+belonged_node_id);
 				if (belonged_node_id.equals(class_node.getId()) || belonged_node_id.equals(node3.getId()) || belonged_node_id.equals(node4.getId())) {
-					add_data(entry.getKey(), entry.getValue());
+//					add_data(entry.getKey(), entry.getValue());
+					editor.putString(entry.getKey(), entry.getValue());
+					editor.commit();
 				}
 			}
 		}
